@@ -115,9 +115,29 @@ const usd = (v) => {
 // ponytail: decimal inputs are rounded to whole KiB, fine for cost estimates
 const bytes = (value, unit) => (BigInt(Math.round(Number(value) * 1024)) * UNITS[unit]) / 1024n
 
+const DAY_MS = 24 * 60 * 60 * 1000
+const toJson = (value) => JSON.stringify(value, (_, v) => (typeof v === 'bigint' ? `${v}n` : v))
+const fromJson = (text) => JSON.parse(text, (_, v) => (typeof v === 'string' && /^\d+n$/.test(v) ? BigInt(v.slice(0, -1)) : v))
+
+// Cached in localStorage for a day so page loads don't hit the public RPC.
+async function fetchPriceList(network) {
+  const key = `priceList:${network}`
+  const cached = localStorage.getItem(key)
+  if (cached) {
+    const { at, priceList } = fromJson(cached)
+    if (Date.now() - at < DAY_MS) return priceList
+  }
+  const priceList = await getPriceList(createPublicClient({ chain: CHAINS[network], transport: http() }))
+  localStorage.setItem(key, toJson({ at: Date.now(), priceList }))
+  return priceList
+}
+
 const priceLists = {}
 async function loadPriceList(network) {
-  priceLists[network] ??= getPriceList(createPublicClient({ chain: CHAINS[network], transport: http() }))
+  priceLists[network] ??= fetchPriceList(network).catch((err) => {
+    delete priceLists[network]
+    throw err
+  })
   return priceLists[network]
 }
 
