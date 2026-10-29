@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Filecoin Onchain Cloud storage cost calculator</title>
+<script type="importmap">
+{
+  "imports": {
+    "viem": "https://cdn.jsdelivr.net/npm/viem@2.55.19/+esm",
+    "@filoz/synapse-core/chains": "https://cdn.jsdelivr.net/npm/@filoz/synapse-core@0.10.3/dist/src/chains.js/+esm",
+    "@filoz/synapse-core/utils": "https://cdn.jsdelivr.net/npm/@filoz/synapse-core@0.10.3/dist/src/utils/index.js/+esm",
+    "@filoz/synapse-core/warm-storage": "https://cdn.jsdelivr.net/npm/@filoz/synapse-core@0.10.3/dist/src/warm-storage/index.js/+esm"
+  }
+}
+</script>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  h1 { font-size: 1.5rem; margin-bottom: .25rem; }
+  .sub { color: #555; margin-top: 0; }
+  form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+  label { display: flex; flex-direction: column; gap: .25rem; font-weight: 600; font-size: .9rem; }
+  .row { display: flex; gap: .5rem; }
+  input, select { font: inherit; padding: .4rem; border: 1px solid #bbb; border-radius: 4px; }
+  input { flex: 1; min-width: 0; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  th, td { text-align: right; padding: .5rem; border-bottom: 1px solid #ddd; }
+  th:first-child, td:first-child { text-align: left; }
+  tr.best td { background: #eef8ee; font-weight: 600; }
+  .headline { font-size: 1.15rem; padding: .75rem 1rem; background: #f4f6fa; border-radius: 6px; }
+  .adv { display: none; }
+  body.advanced .adv { display: table-cell; }
+  body.advanced div.adv, body.advanced label.adv { display: flex; }
+  #details { display: none; }
+  body.advanced #details { display: block; }
+  pre { background: #f6f6f6; padding: .75rem; overflow: auto; font-size: .8rem; }
+  .toggle { font-weight: normal; flex-direction: row; align-items: center; }
+  .toggle input { flex: none; }
+  .note { color: #666; font-size: .85rem; }
+  #error { color: #b00020; }
+</style>
+</head>
+<body>
+<h1>How much does it cost to store data on Filecoin Onchain Cloud?</h1>
+<p class="sub">Estimates for one copy of your data, priced from the live on-chain price list.</p>
+
+<form id="form">
+  <label>Total data
+    <span class="row"><input id="total" type="number" min="0.001" step="any" value="10">
+    <select id="totalUnit"><option value="GiB">GiB</option><option value="TiB" selected>TiB</option></select></span>
+  </label>
+  <label>Typical file size
+    <span class="row"><input id="file" type="number" min="0.001" step="any" value="10">
+    <select id="fileUnit"><option value="KiB">KiB</option><option value="MiB" selected>MiB</option><option value="GiB">GiB</option></select></span>
+  </label>
+  <label>Months to store
+    <input id="months" type="number" min="1" step="1" value="12">
+  </label>
+  <label class="adv">Network
+    <select id="network"><option value="mainnet" selected>Mainnet</option><option value="calibration">Calibration</option></select>
+  </label>
+  <label class="adv">Pieces per add-pieces call
+    <input id="perCall" type="number" min="1" step="1" value="126">
+  </label>
+  <label class="toggle"><input id="advanced" type="checkbox"> Show details</label>
+</form>
+
+<p id="headline" class="headline">Loading the price list…</p>
+<p id="error"></p>
+
+<table>
+  <thead>
+    <tr>
+      <th>How you upload</th>
+      <th class="adv">Pieces</th>
+      <th class="adv">Add-pieces calls</th>
+      <th>One-time fees</th>
+      <th>Upfront deposit</th>
+      <th>Monthly storage</th>
+      <th id="totalHead">Total</th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+<p class="note">Prices in USDFC (≈ USD). The upfront deposit is not an extra cost: it is mostly your first month of storage, held as a lockup, plus a small reserve that pays the one-time fees. Retrieval is free by default.</p>
+
+<div id="details">
+  <h2>Details</h2>
+  <p class="note">Computed with <code>estimateOnboardingCost</code> and <code>estimateStorageCost</code> from
+    <a href="https://www.npmjs.com/package/@filoz/synapse-core">@filoz/synapse-core</a> 0.10.3, using <code>getPriceList</code> read from the chain.
+    One data set, one copy. Packing assumes your files are bundled into CAR files of the given size before upload (for example with <code>filecoin-pin</code>).
+    126 pieces per call matches pieces with an IPFS root CID on Curio v1.29.0; pieces with no metadata fit about 400.</p>
+  <h3>Deposit and fee breakdown</h3>
+  <pre id="breakdown"></pre>
+  <h3>Price list</h3>
+  <pre id="priceList"></pre>
+</div>
+
+<script type="module">
+import { createPublicClient, http, formatUnits } from 'viem'
+import { mainnet, calibration } from '@filoz/synapse-core/chains'
+import { getPriceList } from '@filoz/synapse-core/warm-storage'
+import { compare, KiB, MiB, GiB, TiB } from './calc.js'
+
+const UNITS = { KiB, MiB, GiB, TiB }
+const CHAINS = { mainnet, calibration }
+const $ = (id) => document.getElementById(id)
+const usd = (v) => {
+  const n = Number(formatUnits(v, 18))
+  return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: n < 1 ? 4 : 2 })
+}
+// ponytail: decimal inputs are rounded to whole KiB, fine for cost estimates
+const bytes = (value, unit) => (BigInt(Math.round(Number(value) * 1024)) * UNITS[unit]) / 1024n
+
+const priceLists = {}
+async function loadPriceList(network) {
+  priceLists[network] ??= getPriceList(createPublicClient({ chain: CHAINS[network], transport: http() }))
+  return priceLists[network]
+}
+
+async function render() {
+  document.body.classList.toggle('advanced', $('advanced').checked)
+  $('error').textContent = ''
+  try {
+    const priceList = await loadPriceList($('network').value)
+    const months = Math.max(1, Math.round(Number($('months').value)))
+    const rows = compare({
+      priceList,
+      totalBytes: bytes($('total').value, $('totalUnit').value),
+      fileBytes: bytes($('file').value, $('fileUnit').value),
+      months,
+      piecesPerCall: BigInt(Math.max(1, Math.round(Number($('perCall').value)))),
+    })
+    const best = rows.reduce((a, b) => (b.total < a.total ? b : a))
+    $('totalHead').textContent = `Total for ${months} month${months === 1 ? '' : 's'}`
+    $('rows').innerHTML = rows.map((r) => `
+      <tr class="${r === best ? 'best' : ''}">
+        <td>${r.label}</td>
+        <td class="adv">${r.pieceCount.toLocaleString()}</td>
+        <td class="adv">${r.onboarding.addPiecesCalls.toLocaleString()}</td>
+        <td>${usd(r.onboarding.fees.total)}</td>
+        <td>${usd(r.onboarding.deposit.total)}</td>
+        <td>${usd(r.storage.ratePerMonth)}</td>
+        <td>${usd(r.total)}</td>
+      </tr>`).join('')
+    const asIs = rows[0]
+    $('headline').textContent = best === asIs
+      ? `Your files are already large: uploading them as-is is the cheapest option, about ${usd(best.total)} over ${months} months.`
+      : `Packing saves about ${usd(asIs.total - best.total)}: ${usd(best.total)} instead of ${usd(asIs.total)} over ${months} months.`
+    $('breakdown').textContent = rows.map((r) =>
+      `${r.label}\n  fees: create data set ${usd(r.onboarding.fees.createDataSet)}, add pieces ${usd(r.onboarding.fees.addPieces)}\n` +
+      `  deposit: streaming lockup ${usd(r.onboarding.deposit.streamingLockup)}, lifecycle reserve ${usd(r.onboarding.deposit.lifecycleReserve)}`).join('\n')
+    $('priceList').textContent = JSON.stringify(priceList, (_, v) => (typeof v === 'bigint' ? v.toString() : v), 2)
+  } catch (err) {
+    $('headline').textContent = ''
+    $('error').textContent = `Could not compute: ${err.shortMessage ?? err.message}`
+  }
+}
+
+$('form').addEventListener('input', render)
+render()
+</script>
+</body>
+</html>

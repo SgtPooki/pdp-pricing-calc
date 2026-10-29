@@ -1,0 +1,12 @@
+{
+  "name": "pdp-pricing-calc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@filoz/synapse-core": "0.10.3",
+    "viem": "2.55.19"
+  }
+}
