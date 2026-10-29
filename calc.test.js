@@ -11,7 +11,7 @@ const priceList = {
 }
 
 test('packing 10 TiB of 10 MiB files cuts piece fees from thousands to cents', () => {
-  const [oneByOne, asIs, , , packed64] = compare({ priceList, totalBytes: 10n * TiB, fileBytes: 10n * MiB, months: 12 })
+  const [oneByOne, asIs, , , packed64] = compare({ priceList, totalBytes: 10n * TiB, fileBytes: 10n * MiB, months: 12, copies: 1n })
   assert.equal(oneByOne.onboarding.addPiecesCalls, 1048576n)
   assert.ok(oneByOne.onboarding.fees.total > asIs.onboarding.fees.total)
   assert.equal(asIs.pieceCount, 1048576n)
@@ -23,4 +23,12 @@ test('packing 10 TiB of 10 MiB files cuts piece fees from thousands to cents', (
 test('skips pack sizes not larger than the files', () => {
   const rows = compare({ priceList, totalBytes: 10n * TiB, fileBytes: 32n * GiB, months: 1 })
   assert.deepEqual(rows.map((r) => r.pieceBytes), [32n * GiB, 32n * GiB, 64n * GiB])
+})
+
+test('defaults to 2 copies', () => {
+  const opts = { priceList, totalBytes: 10n * TiB, fileBytes: 10n * MiB, months: 12 }
+  const one = compare({ ...opts, copies: 1n }).at(-1)
+  const two = compare(opts).at(-1)
+  assert.equal(two.storage.total, one.storage.total * 2n)
+  assert.equal(two.onboarding.fees.total, one.onboarding.fees.total * 2n)
 })

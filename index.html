@@ -42,7 +42,7 @@
 </head>
 <body>
 <h1>How much does it cost to store data on Filecoin Onchain Cloud?</h1>
-<p class="sub">Estimates for one copy of your data, priced from the live on-chain price list.</p>
+<p class="sub">Estimates priced from the live on-chain price list.</p>
 
 <form id="form">
   <label>Total data
@@ -58,6 +58,9 @@
   </label>
   <label class="adv">Network
     <select id="network"><option value="mainnet" selected>Mainnet</option><option value="calibration">Calibration</option></select>
+  </label>
+  <label class="adv">Copies
+    <input id="copies" type="number" min="2" step="1" value="2">
   </label>
   <label class="adv">Pieces per add-pieces call
     <input id="perCall" type="number" min="1" step="1" value="126">
@@ -88,7 +91,7 @@
   <h2>Details</h2>
   <p class="note">Computed with <code>estimateOnboardingCost</code> and <code>estimateStorageCost</code> from
     <a href="https://www.npmjs.com/package/@filoz/synapse-core">@filoz/synapse-core</a> 0.10.3, using <code>getPriceList</code> read from the chain.
-    One data set, one copy. Packing assumes your files are bundled into CAR files of the given size before upload (for example with <code>filecoin-pin</code>).
+    Each copy is its own data set on a different provider, and every cost scales with the number of copies. Packing assumes your files are bundled into CAR files of the given size before upload (for example with <code>filecoin-pin</code>).
     126 pieces per call matches pieces with an IPFS root CID on Curio v1.29.0; pieces with no metadata fit about 400.</p>
   <h3>Deposit and fee breakdown</h3>
   <pre id="breakdown"></pre>
@@ -130,6 +133,7 @@ async function render() {
       fileBytes: bytes($('file').value, $('fileUnit').value),
       months,
       piecesPerCall: BigInt(Math.max(1, Math.round(Number($('perCall').value)))),
+      copies: BigInt(Math.max(2, Math.round(Number($('copies').value)))),
     })
     const best = rows.reduce((a, b) => (b.total < a.total ? b : a))
     $('totalHead').textContent = `Total for ${months} month${months === 1 ? '' : 's'}`

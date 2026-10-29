@@ -10,18 +10,20 @@ export const TiB = GiB * 1024n
 export const PACK_SIZES = [1n * GiB, 32n * GiB, 64n * GiB]
 
 // ponytail: files larger than the max piece size are counted as one piece each; split them if that matters
-function strategy(label, pieceBytes, { priceList, totalBytes, months, piecesPerCall }) {
+function strategy(label, pieceBytes, { priceList, totalBytes, months, piecesPerCall, copies }) {
   const pieceCount = (totalBytes + pieceBytes - 1n) / pieceBytes
   const onboarding = estimateOnboardingCost({
     priceList,
     sizeInBytes: totalBytes,
     pieceCount,
     piecesPerAddPiecesCall: piecesPerCall,
+    copies,
   })
   const storage = estimateStorageCost({
     priceList,
     sizeInBytes: totalBytes,
     durationInEpochs: BigInt(months) * TIME_CONSTANTS.EPOCHS_PER_MONTH,
+    copies,
   })
   return {
     label,
@@ -33,9 +35,9 @@ function strategy(label, pieceBytes, { priceList, totalBytes, months, piecesPerC
   }
 }
 
-/** One data set, one copy: each file as its own piece vs packed into larger pieces. */
-export function compare({ priceList, totalBytes, fileBytes, months, piecesPerCall = 126n }) {
-  const opts = { priceList, totalBytes, months, piecesPerCall }
+/** Each file as its own piece vs packed into larger pieces. Each copy is its own data set. */
+export function compare({ priceList, totalBytes, fileBytes, months, piecesPerCall = 126n, copies = 2n }) {
+  const opts = { priceList, totalBytes, months, piecesPerCall, copies }
   return [
     strategy('Upload each file as-is, one per transaction', fileBytes, { ...opts, piecesPerCall: 1n }),
     strategy(`Upload each file as-is, ${piecesPerCall} per transaction`, fileBytes, opts),
