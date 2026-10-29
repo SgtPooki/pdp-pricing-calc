@@ -37,7 +37,8 @@ function strategy(label, pieceBytes, { priceList, totalBytes, months, piecesPerC
 export function compare({ priceList, totalBytes, fileBytes, months, piecesPerCall = 126n }) {
   const opts = { priceList, totalBytes, months, piecesPerCall }
   return [
-    strategy('Upload each file as-is', fileBytes, opts),
+    strategy('Upload each file as-is, one per transaction', fileBytes, { ...opts, piecesPerCall: 1n }),
+    strategy(`Upload each file as-is, ${piecesPerCall} per transaction`, fileBytes, opts),
     ...PACK_SIZES.filter((size) => size > fileBytes).map((size) =>
       strategy(`Pack into ${size / GiB} GiB pieces`, size, opts)
     ),

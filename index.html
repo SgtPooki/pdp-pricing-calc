@@ -143,10 +143,10 @@ async function render() {
         <td>${usd(r.storage.ratePerMonth)}</td>
         <td>${usd(r.total)}</td>
       </tr>`).join('')
-    const asIs = rows[0]
-    $('headline').textContent = best === asIs
+    const oneByOne = rows[0]
+    $('headline').textContent = best.pieceBytes === oneByOne.pieceBytes
       ? `Your files are already large: uploading them as-is is the cheapest option, about ${usd(best.total)} over ${months} months.`
-      : `Packing saves about ${usd(asIs.total - best.total)}: ${usd(best.total)} instead of ${usd(asIs.total)} over ${months} months.`
+      : `Packing saves about ${usd(oneByOne.total - best.total)}: ${usd(best.total)} instead of ${usd(oneByOne.total)} over ${months} months.`
     $('breakdown').textContent = rows.map((r) =>
       `${r.label}\n  fees: create data set ${usd(r.onboarding.fees.createDataSet)}, add pieces ${usd(r.onboarding.fees.addPieces)}\n` +
       `  deposit: streaming lockup ${usd(r.onboarding.deposit.streamingLockup)}, lifecycle reserve ${usd(r.onboarding.deposit.lifecycleReserve)}`).join('\n')
